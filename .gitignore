@@ -1,0 +1,6 @@
+compiled/
+doc/
+*.zo
+*.so
+*.tmp
+.DS_Store
