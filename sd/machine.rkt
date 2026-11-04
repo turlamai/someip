@@ -177,7 +177,8 @@
    udp-endpoint tcp-endpoint
    eventgroups                     ; hash: id -> multicast-option or #f
    send-multicast send-unicast     ; (-> bytes void) / (-> dest bytes void)
-   on-subscribe                    ; (-> sid iid egid ttl endpoints) -> 'ack | 'nack
+   on-subscribe                    ; (-> sid iid egid ttl endpoints sender)
+                                   ;   -> 'ack | 'nack
    state)
   #:transparent)
 
@@ -203,7 +204,7 @@
          #:eventgroups [eventgroups '()]
          #:send-multicast send-multicast
          #:send-unicast send-unicast
-         #:on-subscribe [on-subscribe (lambda (sid iid egid ttl endpoints) 'ack)]
+         #:on-subscribe [on-subscribe (lambda (sid iid egid ttl endpoints sender) 'ack)]
          #:config [config (make-sd-config)]
          #:random [random #f])
   (unless (> ttl-seconds 0)
@@ -452,7 +453,7 @@
   (define verdict
     ((sd-server-on-subscribe srv)
      (sd-server-service-id srv) (sd-server-instance-id srv)
-     egid ttl endpoints))
+     egid ttl endpoints sender))
   (if (eq? verdict 'nack)
       (send-subscribe-reply srv 'nack entry sender)
       (let ()
@@ -1035,7 +1036,7 @@
      #:eventgroups (list (offered-eventgroup #x10 #f))
      #:send-multicast (lambda (bs) (void))
      #:send-unicast (lambda (dest bs) (record 'unicast dest bs))
-     #:on-subscribe (lambda (sid iid egid ttl endpoints) 'nack)))
+     #:on-subscribe (lambda (sid iid egid ttl endpoints sender) 'nack)))
   (sd-server-start! server2)
   (virtual-advance! vm 100)
   (reset-log!)

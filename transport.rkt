@@ -36,6 +36,7 @@
          make-someip-endpoint
          endpoint-closed?
          endpoint-send-udp!
+         endpoint-send-udp-raw!
          endpoint-send-multicast!
          endpoint-send-tcp!
          endpoint-close!
@@ -82,10 +83,16 @@
     (define-values (_lh bound-port _rh _rp)
       (udp-addresses sock #t))
     (for ([group-address multicast-groups])
-      (udp-multicast-join-group! sock group-address)
-      (udp-multicast-set-loopback! sock #f))
-    ;; UDP reader thread
+      (udp-multicast-join-group! sock group-address #f)
+      (udp-multicast-set-loopback! sock #t))
     (define reassembler (make-tp-reassembler #:max-size tp-max-size))
+    (define ep-placeholder
+      (someip-endpoint cust sock bound-port #f #f message-handler
+                       (box (make-hash)) (make-semaphore 1)
+                       reassembler
+                       #f))
+    ;; UDP reader thread: dispatches through the (mutable) endpoint
+    ;; field so handlers can be composed after construction
     (define buffer (make-bytes 65536))
     (thread
      (lambda ()
@@ -99,7 +106,7 @@
                                           (someip-log-warning
                                            "transport: dropped UDP datagram: ~a"
                                            (exn-message e)))])
-               (dispatch-datagram message-handler
+               (dispatch-datagram (someip-endpoint-message-handler ep-placeholder)
                                   reassembler
                                   buffer 0 n host port)))
            (loop)))))
@@ -119,17 +126,19 @@
     (define listener
       (and chosen-tcp-port
            (tcp-listen chosen-tcp-port 128 reuse-address?)))
+    (set-someip-endpoint-tcp-listener! ep-placeholder listener)
+    (set-someip-endpoint-tcp-port! ep-placeholder chosen-tcp-port)
     (when listener
       (thread
        (lambda ()
          (let accept-loop ()
            (define-values (in out) (tcp-accept listener))
-           (thread (lambda () (tcp-reader-loop message-handler in out)))
+           (thread
+            (lambda ()
+              (tcp-reader-loop
+               (someip-endpoint-message-handler ep-placeholder) in out)))
            (accept-loop)))))
-    (someip-endpoint cust sock bound-port listener chosen-tcp-port message-handler
-                     (box (make-hash)) (make-semaphore 1)
-                     reassembler
-                     #f)))
+    ep-placeholder))
 
 ;; UDP port the endpoint is bound to (SD messages must originate from
 ;; SD_PORT [00601]; binds make that possible).
@@ -207,6 +216,13 @@
   (for ([seg (segment-someip-message msg)])
     (udp-send-to (someip-endpoint-udp-sock ep) host port
                  (encode-someip-message seg))))
+
+;; Send pre-encoded wire bytes (used for SOME/IP-SD, whose machines
+;; produce encoded packets).
+(define (endpoint-send-udp-raw! ep host port wire-bytes)
+  (when (someip-endpoint-closed? ep)
+    (raise (exn:fail:someip "transport: endpoint is closed" (current-continuation-marks))))
+  (udp-send-to (someip-endpoint-udp-sock ep) host port wire-bytes))
 
 (define (endpoint-send-multicast! ep group-address port msg)
   (endpoint-send-udp! ep group-address port msg))
