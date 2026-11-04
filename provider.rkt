@@ -115,8 +115,8 @@
             (offered-eventgroup eg #f)) ; no per-group multicast endpoint yet
           #:send-multicast
           (lambda (bs)
-            (endpoint-send-udp-raw! endpoint multicast-address
-                                      (or multicast-port sd-port) bs))
+            (endpoint-send-multicast-raw! endpoint multicast-address
+                                          (or multicast-port sd-port) bs))
           #:send-unicast
           (lambda (dest bs)
             (endpoint-send-udp-raw! endpoint (dest-host dest) (dest-port dest) bs))
