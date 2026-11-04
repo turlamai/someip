@@ -21,7 +21,7 @@ jobs:
           variant: CS
           version: ${{ matrix.racket-version }}
       - name: Install package
-        run: raco pkg install --auto --batch --link .
+        run: raco pkg install --auto --batch --link "${{ github.workspace }}"
       - name: Run tests
         run: raco test .
       - name: Check package dependencies
