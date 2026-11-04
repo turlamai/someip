@@ -31,6 +31,7 @@
          racket/format
          racket/list
          racket/match
+         "message.rkt"
          "private/bytes.rkt"
          "logging.rkt")
 
@@ -54,7 +55,7 @@
          fixed-array
          dyn-array
 
-         member struct-member-name struct-member-codec
+         struct-member
          struct-c
 
          union-c
@@ -67,7 +68,8 @@
 
 (module+ test (require rackunit))
 
-(struct exn:fail:someip:malformed exn:fail ())
+;; exn:fail:someip / exn:fail:someip:malformed come from (someip
+;; message) so the whole stack shares one exception hierarchy.
 
 (define (malformed fmt . args)
   (raise (exn:fail:someip:malformed (apply format (string-append "someip-serialize: " fmt) args)
@@ -524,17 +526,17 @@
 ;; ------------------------------------------------------------------
 ;; Structs and member lists
 
-(struct struct-member (name codec data-id optional?))
+(struct struct-member* (name codec data-id optional?))
 
-(define (member name codec [data-id #f] #:optional [optional? #f])
-  (unless (symbol? name) (raise-argument-error 'member "symbol?" name))
-  (unless (codec? codec) (raise-argument-error 'member "codec?" codec))
+(define (struct-member name codec [data-id #f] #:optional [optional? #f])
+  (unless (symbol? name) (raise-argument-error 'struct-member "symbol?" name))
+  (unless (codec? codec) (raise-argument-error 'struct-member "codec?" codec))
   (unless (or (not data-id) (and (exact-nonnegative-integer? data-id) (< data-id 4096)))
-    (raise-argument-error 'member "12 bit data-id" data-id))
-  (struct-member name codec data-id optional?))
+    (raise-argument-error 'struct-member "12 bit data-id" data-id))
+  (struct-member* name codec data-id optional?))
 
 (define (check-member-level members who)
-  (define ids (map struct-member-data-id members))
+  (define ids (map struct-member*-data-id members))
   (unless (or (andmap not ids) (andmap values ids))
     (raise-argument-error who
                           "data-ids defined for all members of a level or none"
@@ -547,37 +549,37 @@
 ;; parsing [00218]; absent optional members are ignored [00223] and
 ;; decode to 'absent.
 (define (members-c members)
-  (unless (and (list? members) (pair? members) (andmap struct-member? members))
+  (unless (and (list? members) (pair? members) (andmap struct-member*? members))
     (raise-argument-error 'members-c "non-empty list of members" members))
   (check-member-level members 'members-c)
   (codec
    (lambda (v c cfg)
      (unless (dict? v) (raise-argument-error 'members-c "dict of member values" v))
      (for ([m members] [i (in-naturals)])
-       (define val (dict-ref v (struct-member-name m) 'absent))
+       (define val (dict-ref v (struct-member*-name m) 'absent))
        (cond
          [(serialization-tlv? cfg)
           (when (eq? val 'absent)
-            (unless (struct-member-optional? m)
-              (malformed "required member ~a absent" (struct-member-name m))))
+            (unless (struct-member*-optional? m)
+              (malformed "required member ~a absent" (struct-member*-name m))))
           (unless (eq? val 'absent)
-            (write-tag c (struct-member-data-id m) (wire-type (struct-member-codec m) cfg))
-            (write-tagged-member (struct-member-codec m) val c cfg))]
+            (write-tag c (struct-member*-data-id m) (wire-type (struct-member*-codec m) cfg))
+            (write-tagged-member (struct-member*-codec m) val c cfg))]
          [else
           (when (eq? val 'absent)
-            (unless (struct-member-optional? m)
-              (malformed "required member ~a absent" (struct-member-name m))))
+            (unless (struct-member*-optional? m)
+              (malformed "required member ~a absent" (struct-member*-name m))))
           (unless (eq? val 'absent)
-            (encode-with (struct-member-codec m) val c cfg)
-            (pad-after-element c (not (codec-fixed-size (struct-member-codec m)))
+            (encode-with (struct-member*-codec m) val c cfg)
+            (pad-after-element c (not (codec-fixed-size (struct-member*-codec m)))
                                (< (add1 i) (length members)) cfg))])))
    (lambda (r cfg)
      (if (serialization-tlv? cfg)
          (decode-tagged-members members r cfg)
          (let ([acc (make-hasheq)])
            (for ([m members] [i (in-naturals)])
-             (hash-set! acc (struct-member-name m) (decode-with (struct-member-codec m) r cfg))
-             (skip-after-element r (not (codec-fixed-size (struct-member-codec m)))
+             (hash-set! acc (struct-member*-name m) (decode-with (struct-member*-codec m) r cfg))
+             (skip-after-element r (not (codec-fixed-size (struct-member*-codec m)))
                                  (< (add1 i) (length members)) cfg))
            ;; expose immutable hashes to callers (equal?-comparable)
            (for/hasheq ([(k v) (in-hash acc)]) (values k v)))))
@@ -586,7 +588,7 @@
 ;; A struct with an optional length field covering its body [00370]; in
 ;; TLV mode the length field is required [00241].
 (define (struct-c members [length-bytes 'default])
-  (unless (and (list? members) (pair? members) (andmap struct-member? members))
+  (unless (and (list? members) (pair? members) (andmap struct-member*? members))
     (raise-argument-error 'struct-c "non-empty list of members" members))
   (check-member-level members 'struct-c)
   (define lb (resolve-length-bytes length-bytes 'struct-c))
@@ -675,17 +677,17 @@
       ;; wire exhausted: only optional members may remain absent [00223]
       [(rd-eof? r)
        (for ([m remaining])
-         (if (struct-member-optional? m)
-             (hash-set! acc (struct-member-name m) 'absent)
-             (malformed "required member ~a absent" (struct-member-name m))))]
+         (if (struct-member*-optional? m)
+             (hash-set! acc (struct-member*-name m) 'absent)
+             (malformed "required member ~a absent" (struct-member*-name m))))]
       [else
        (define-values (wt data-id) (read-tag r))
-       (define m (findf (lambda (m) (equal? (struct-member-data-id m) data-id)) remaining))
+       (define m (findf (lambda (m) (equal? (struct-member*-data-id m) data-id)) remaining))
        (cond
          [m
-          (unless (= wt (wire-type (struct-member-codec m) cfg))
-            (malformed "wire type ~a does not match member ~a" wt (struct-member-name m)))
-          (hash-set! acc (struct-member-name m) (read-tagged-member (struct-member-codec m) wt r cfg))
+          (unless (= wt (wire-type (struct-member*-codec m) cfg))
+            (malformed "wire type ~a does not match member ~a" wt (struct-member*-name m)))
+          (hash-set! acc (struct-member*-name m) (read-tagged-member (struct-member*-codec m) wt r cfg))
           (loop (remq m remaining))]
          [else
           (skip-tagged-member wt r cfg)
@@ -917,8 +919,8 @@
   ;; ---- struct with length field [00370] --------------------------
 
   (define point-c
-    (struct-c (list (member 'x float32-c)
-                    (member 'y float32-c))))
+    (struct-c (list (struct-member 'x float32-c)
+                    (struct-member 'y float32-c))))
   (define point-bytes (encode-payload point-c (hasheq 'x 1.0 'y 2.0) be))
   (check-equal? point-bytes
                 (bytes 0 0 0 8 #x3F #x80 0 0 #x40 0 0 0))
@@ -928,10 +930,10 @@
   ;; Figure 4.3 shape: uint16 + dynamic array + uint32 + uint64; padding
   ;; is inserted after the variable array before the next member.
   (define fig-c
-    (members-c (list (member 'm1 uint16-c)
-                     (member 'm2 (dyn-array uint8-c))
-                     (member 'm3 uint32-c)
-                     (member 'm4 uint64-c))))
+    (members-c (list (struct-member 'm1 uint16-c)
+                     (struct-member 'm2 (dyn-array uint8-c))
+                     (struct-member 'm3 uint32-c)
+                     (struct-member 'm4 uint64-c))))
   (define fig-bytes
     (encode-payload fig-c (hasheq 'm1 1 'm2 (list 9 9 9) 'm3 2 'm4 3) be))
   ;; 2 + (4+3) + pad(to 8-byte boundary: 7) + 4 + 8 = 28 bytes
@@ -944,9 +946,9 @@
 
   (define tlv-cfg (serialization-config #:tlv? #f))
   (define tagged
-    (members-c (list (member 'id uint16-c 1)
-                     (member 'name (dyn-string 'utf-8) 2)
-                     (member 'score uint32-c 3 #:optional #t))))
+    (members-c (list (struct-member 'id uint16-c 1)
+                     (struct-member 'name (dyn-string 'utf-8) 2)
+                     (struct-member 'score uint32-c 3 #:optional #t))))
   (define tagged-cfg (serialization-config #:tlv? #t))
   (define tagged-bytes
     (encode-payload tagged (hasheq 'id 7 'name "ab") tagged-cfg))

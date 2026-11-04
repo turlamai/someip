@@ -2,7 +2,7 @@
 
 (define collection "someip")
 
-(define version "0.1.0")
+(define version "0.1")
 
 ;; Runtime depends only on the base distribution: pure Racket, no foreign
 ;; libraries. Everything (codec, transport, discovery) is implemented on

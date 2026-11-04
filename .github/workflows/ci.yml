@@ -1,0 +1,30 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        racket-version: ["stable"]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Bogdanp/setup-racket@v1.11
+        with:
+          architecture: x64
+          distribution: full
+          variant: CS
+          version: ${{ matrix.racket-version }}
+      - name: Install package
+        run: raco pkg install --auto --batch --link .
+      - name: Run tests
+        run: raco test .
+      - name: Check package dependencies
+        run: raco setup --check-pkg-deps someip
+      - name: Build documentation
+        run: raco setup --doc-build someip || raco setup someip
