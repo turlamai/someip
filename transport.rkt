@@ -37,6 +37,7 @@
          endpoint-closed?
          endpoint-send-udp!
          endpoint-send-udp-raw!
+         endpoint-send-multicast-raw!
          endpoint-send-multicast!
          endpoint-send-tcp!
          endpoint-close!
@@ -224,8 +225,27 @@
     (raise (exn:fail:someip "transport: endpoint is closed" (current-continuation-marks))))
   (udp-send-to (someip-endpoint-udp-sock ep) host port wire-bytes))
 
+;; Pre-encoded bytes to a multicast group, tolerant like
+;; endpoint-send-multicast!.
+(define (endpoint-send-multicast-raw! ep group-address port wire-bytes)
+  (with-handlers ([exn:fail:network?
+                   (lambda (e)
+                     (someip-log-warning
+                      "transport: multicast send to ~a:~a failed (no route?): ~a"
+                      group-address port (exn-message e)))])
+    (endpoint-send-udp-raw! ep group-address port wire-bytes)))
+
+;; Multicast is an optional capability: CI containers and hosts without
+;; a multicast route raise EHOSTUNREACH/ENETUNREACH on send. Those are
+;; logged, not raised - SD discovery degrades gracefully without them.
+;; Unicast sends (endpoint-send-udp!) keep strict error behavior.
 (define (endpoint-send-multicast! ep group-address port msg)
-  (endpoint-send-udp! ep group-address port msg))
+  (with-handlers ([exn:fail:network?
+                   (lambda (e)
+                     (someip-log-warning
+                      "transport: multicast send to ~a:~a failed (no route?): ~a"
+                      group-address port (exn-message e)))])
+    (endpoint-send-udp! ep group-address port msg)))
 
 ;; Send one message over TCP, reusing (or establishing) the connection
 ;; to host:port. A broken connection is dropped so the next send
