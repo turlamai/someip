@@ -228,7 +228,7 @@
 ;; Pre-encoded bytes to a multicast group, tolerant like
 ;; endpoint-send-multicast!.
 (define (endpoint-send-multicast-raw! ep group-address port wire-bytes)
-  (with-handlers ([exn:fail:network?
+  (with-handlers ([exn:fail?
                    (lambda (e)
                      (someip-log-warning
                       "transport: multicast send to ~a:~a failed (no route?): ~a"
@@ -240,7 +240,7 @@
 ;; logged, not raised - SD discovery degrades gracefully without them.
 ;; Unicast sends (endpoint-send-udp!) keep strict error behavior.
 (define (endpoint-send-multicast! ep group-address port msg)
-  (with-handlers ([exn:fail:network?
+  (with-handlers ([exn:fail?
                    (lambda (e)
                      (someip-log-warning
                       "transport: multicast send to ~a:~a failed (no route?): ~a"
