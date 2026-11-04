@@ -55,6 +55,7 @@
          (struct-out offered-eventgroup)
 
          (struct-out sd-server)
+         (struct-out sd-client)
          make-sd-server
          sd-server-start!
          sd-server-stop!
@@ -417,6 +418,7 @@
             [else (void)]))))))
 
 (define (answer-find srv sender from-multicast?)
+  ;; caller holds the server lock
   (define cfg (sd-server-config srv))
   (define delay
     (if from-multicast?
@@ -424,17 +426,23 @@
                         (sd-config-request-response-delay-min-ms cfg)
                         (sd-config-request-response-delay-max-ms cfg))
         0))
-  (define (do-answer)
-    (with-server-lock srv
-      (lambda ()
-        (define st (sd-server-state srv))
-        (unless (memq (server-state-phase st) '(stopped down))
-          (define session-st (server-session-for! srv sender))
-          (define-values (session reboot) (next-session! session-st))
-          (server-send-offer srv sender reboot session)))))
   (if (> delay 0)
-      (timer-schedule! (sd-server-timers srv) delay do-answer)
-      (do-answer)))
+      (timer-schedule! (sd-server-timers srv) delay
+                       (lambda () (answer-find-locked srv sender)))
+      ;; delay 0: the caller already holds the server lock
+      (server-answer-now srv sender)))
+
+;; lock-acquiring variant for timer callbacks
+(define (answer-find-locked srv sender)
+  (with-server-lock srv (lambda () (server-answer-now srv sender))))
+
+;; caller must hold the server lock
+(define (server-answer-now srv sender)
+  (define st (sd-server-state srv))
+  (unless (memq (server-state-phase st) '(stopped down))
+    (define session-st (server-session-for! srv sender))
+    (define-values (session reboot) (next-session! session-st))
+    (server-send-offer srv sender reboot session)))
 
 (define (handle-subscribe srv entry sender endpoints now-ms)
   (define st (sd-server-state srv))
@@ -917,9 +925,11 @@
 
   ;; ---- server lifecycle ------------------------------------------
 
+  (define random-zero (lambda (span) 0))
   (define server
     (make-sd-server
      #:timer-manager vm
+     #:random random-zero
      #:config config
      #:service-id #x1234
      #:instance-id 1
@@ -972,9 +982,10 @@
   (define find-no-unicast (struct-copy sd-packet find-pkt [unicast? #f]))
   (sd-server-handle-message! server find-no-unicast 7 sender-a #t)
   (check-equal? log '())
-  ;; multicast find with unicast flag: answered unicast after 50 ms
+  ;; multicast find with unicast flag: answered unicast after the
+  ;; request-response delay (50 ms in this config)
   (sd-server-handle-message! server find-pkt 7 sender-a #t)
-  (check-equal? log '() "answer delayed by request-response-delay")
+  (check-equal? (length (unicasts-to sender-a)) 0 "answer delayed")
   (virtual-advance! vm 50)
   (check-equal? (length (unicasts-to sender-a)) 1)
   (define-values (offer-a sid-a _c3) (decode-sd-message (first (unicasts-to sender-a))))
@@ -1018,6 +1029,7 @@
   (define server2
     (make-sd-server
      #:timer-manager vm
+     #:random random-zero
      #:config config
      #:service-id #x1234 #:instance-id 1 #:major-version 1 #:minor-version 5
      #:eventgroups (list (offered-eventgroup #x10 #f))
@@ -1053,6 +1065,7 @@
   (define client
     (make-sd-client
      #:timer-manager vm
+     #:random random-zero
      #:config config
      #:service-id #x1234 #:instance-id 1 #:major-version 1
      #:eventgroup-ids '(#x10)
@@ -1110,6 +1123,7 @@
   (define ack-entry
     (subscribe-ack-entry #:service-id #x1234 #:instance-id 1
                          #:major-version 1 #:eventgroup-id #x10
+                         #:ttl 30
                          #:counter 1
                          #:multicast-option (sd-endpoint-option 'multicast 'ipv4
                                                                 "239.1.1.1" 41001 'udp #f)))
@@ -1129,8 +1143,9 @@
   (sd-client-handle-message! client
                              (sd-packet #t #t (list offer-entry) '())
                              1 sender-a #t)
-  (check-true (memq 'reboot (reverse client-events)))
-  ;; after the reboot the subscription re-subscribes
+  (check-not-false (memq 'reboot (reverse client-events)))
+  ;; after the reboot the subscription re-subscribes (retry delay 300)
+  (virtual-advance! vm 300)
   (check-equal? (length (unicasts-to sender-a)) 1)
 
   ;; stop offer clears everything
