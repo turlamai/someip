@@ -40,6 +40,7 @@
          provider-stop!
          provider-stop-offer!
          provider-notify!
+         provider-subscribe!
          provider-subscribers)
 
 (module+ test (require rackunit racket/list))

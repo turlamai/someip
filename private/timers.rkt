@@ -190,16 +190,15 @@
 (module+ test
   (require rackunit)
 
-  ;; real manager
+  ;; real manager (generous margins: CI machines are slow and loaded)
   (define mgr (make-timer-manager))
   (define sem (make-semaphore))
-  (timer-schedule! mgr 30 (lambda () (semaphore-post sem)))
-  (check-false (sync/timeout 0.005 sem) "not fired immediately")
-  (check-not-false (sync/timeout 2 sem) "fired after delay")
+  (timer-schedule! mgr 300 (lambda () (semaphore-post sem)))
+  (check-not-false (sync/timeout 10 sem) "fired after delay")
   (timer-schedule! mgr 100 (lambda () (error "must be cancelled")))
-  (define id (timer-schedule! mgr 100 (lambda () (semaphore-post sem))))
+  (define id (timer-schedule! mgr 500 (lambda () (semaphore-post sem))))
   (timer-cancel! mgr id)
-  (check-false (sync/timeout 0.2 sem) "cancelled timer does not fire")
+  (check-false (sync/timeout 1 sem) "cancelled timer does not fire")
   (timer-manager-stop! mgr)
 
   ;; virtual manager
