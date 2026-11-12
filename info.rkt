@@ -6,10 +6,11 @@
 
 (define version "0.1")
 
-;; Runtime depends only on the base distribution: pure Racket, no foreign
-;; libraries. Everything (codec, transport, discovery) is implemented on
-;; top of racket/base, racket/udp and racket/tcp.
-(define deps '("base"))
+;; The shipped collection depends on base alone: pure Racket, no foreign
+;; libraries. rackunit-lib stays a runtime dep because test/ ships inside
+;; this package and raco setup --check-pkg-deps classifies its requires
+;; as run-mode (glaze/foreman precedent).
+(define deps '("base" "rackunit-lib"))
 
 (define build-deps '("base" "scribble-lib" "racket-doc" "rackunit-doc" "rackunit-lib"))
 
