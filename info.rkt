@@ -1,5 +1,7 @@
 #lang info
 
+(define name "someip")
+
 (define collection "someip")
 
 (define version "0.1")
@@ -7,7 +9,7 @@
 ;; Runtime depends only on the base distribution: pure Racket, no foreign
 ;; libraries. Everything (codec, transport, discovery) is implemented on
 ;; top of racket/base, racket/udp and racket/tcp.
-(define deps '("base" "rackunit-lib"))
+(define deps '("base"))
 
 (define build-deps '("base" "scribble-lib" "racket-doc" "rackunit-doc" "rackunit-lib"))
 
@@ -19,3 +21,6 @@
 (define pkg-authors '(turlamai))
 
 (define license 'Apache-2.0)
+
+;; `test/` runs under raco test; keep it out of setup compilation.
+(define test-omit-paths '("test"))
