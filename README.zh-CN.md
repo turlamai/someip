@@ -1,7 +1,5 @@
 # someip
 
-**支持：**[问题与反馈](https://github.com/turlamai/someip/issues) · [当前交付策略](https://github.com/turlamai/turlamai.github.io/blob/master/PORTFOLIO.zh-CN.md)
-
 纯 Racket 实现的 SOME/IP 协议栈。
 
 `someip` 在标准 Racket 发行版之上实现 AUTOSAR **SOME/IP**（Scalable
