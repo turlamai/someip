@@ -1,5 +1,7 @@
 # someip
 
+**Support:** [Issues & feedback](https://github.com/turlamai/someip/issues) · [Development policy](https://github.com/turlamai/turlamai.github.io/blob/master/PORTFOLIO.md)
+
 A SOME/IP protocol stack in pure Racket.
 
 `someip` implements the AUTOSAR **SOME/IP** (Scalable service-Oriented
